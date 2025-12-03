@@ -6,9 +6,10 @@ Install these prerequisites to follow along with the tutorial. See free video tu
 - EthersJs: https://ethers.org/
 - Tailwind CSS: https://tailwindcss.com/
 
-
-
 ## Step 1. 
-`npm start`
+run 'npm install' (or 'yarn install' for MacOS).
+## Step 2. 
+run 'npm start' (or 'yarn start' for MacOS).
+
 Visit this URL in your browser: http://localhost:3000
 
