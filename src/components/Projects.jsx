@@ -76,16 +76,18 @@ const MOCK_PROJECTS = [
     },
 ]
 
-const ProjectCard = ({ project }) => {
+// 1. SỬA: Nhận thêm prop "index"
+const ProjectCard = ({ project, index }) => { 
     const { title, owner, amountRaised, goal, backers, daysLeft, progress, status } = project
-    const imageURL = `https://picsum.photos/400/300?random=${owner.slice(2, 6)}`
+    const imageURL = `https://picsum.photos/400/300?random=${index}` // Dùng index để ảnh không bị đổi lung tung
     const statusColor = status === 'Goal Met' || status === 'Overfunded' ? 'bg-green-500' : 'bg-red-500'
     const statusText = status === 'Goal Met' || status === 'Overfunded' ? 'FUNDED' : 'LIVE'
     const statusIcon = status === 'Goal Met' || status === 'Overfunded' ? <FaStar className="mr-1" /> : null
 
     return (
         <div className="rounded-xl shadow-lg bg-white w-72 m-4 transition duration-300 ease-in-out hover:shadow-2xl hover:scale-[1.03]">
-            <Link to={`/project/${owner}`}>
+            {/* 2. SỬA: Link trỏ sang trang Donate với ID là index (0, 1, 2...) */}
+            <Link to={`/donate/${index}`}> 
                 <div className="relative">
                     <img src={imageURL} alt={title} className="rounded-t-xl h-48 w-full object-cover" />
                     <span className={`absolute top-3 right-3 text-white text-xs font-semibold px-3 py-1 rounded-full ${statusColor} flex items-center`}>
@@ -144,8 +146,8 @@ const ProjectCard = ({ project }) => {
 }
 
 const Projects = () => {
-    const [visibleCount, setVisibleCount] = useState(6) // Hiển thị 6 dự án đầu
-    const [filter, setFilter] = useState('All') // All, Active, Completed
+    const [visibleCount, setVisibleCount] = useState(6) 
+    const [filter, setFilter] = useState('All') 
 
     const filteredProjects = MOCK_PROJECTS.filter(project => {
         if(filter === 'All') return true
@@ -157,7 +159,7 @@ const Projects = () => {
     const projectsToShow = filteredProjects.slice(0, visibleCount)
 
     const handleLoadMore = () => {
-        setVisibleCount(prev => prev + 6) // mỗi lần load thêm 6 dự án
+        setVisibleCount(prev => prev + 6) 
     }
 
     return (
@@ -186,7 +188,8 @@ const Projects = () => {
             {/* Projects Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">
                 {projectsToShow.map((project, i) => (
-                    <ProjectCard key={i} project={project} />
+                    // 3. SỬA: Truyền index={i} vào đây
+                    <ProjectCard key={i} project={project} index={i} />
                 ))}
             </div>
 

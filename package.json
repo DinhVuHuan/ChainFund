@@ -12,6 +12,7 @@
     "@cometchat-pro/chat": "^3.0.10",
     "@nomiclabs/hardhat-ethers": "^2.1.0",
     "@nomiclabs/hardhat-waffle": "^2.0.3",
+    "@supabase/supabase-js": "^2.39.3",
     "ethereum-waffle": "^3.4.4",
     "ethers": "^5.6.9",
     "hardhat": "^2.10.1",

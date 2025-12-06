@@ -6,9 +6,24 @@ import { LuSun, LuMoon } from "react-icons/lu";
 import { GiThreeLeaves } from "react-icons/gi";
 import { FaWallet } from "react-icons/fa";
 
+// 1. IMPORT HÀM KẾT NỐI TỪ SERVICE
+import { connectWallet } from "../services/blockchain";
+
 const CharityHeader = () => {
     const [open, setOpen] = useState(false);
     const [dark, setDark] = useState(false);
+    
+    // 2. STATE LƯU ĐỊA CHỈ VÍ
+    const [account, setAccount] = useState('');
+
+    // 3. HÀM XỬ LÝ KHI BẤM NÚT
+    const handleConnect = async () => {
+        const address = await connectWallet();
+        if(address) {
+            setAccount(address);
+            // setOpen(false); // Nếu muốn tự đóng menu sau khi kết nối thì bỏ comment dòng này
+        }
+    };
 
     return (
         <header
@@ -88,8 +103,10 @@ const CharityHeader = () => {
                             Create Campaign
                         </Link>
 
-                        {/* CONNECT WALLET BUTTON (NEW) */}
+                        {/* CONNECT WALLET BUTTON (ĐÃ SỬA) */}
                         <button
+                            onClick={handleConnect} // Gọi hàm kết nối
+                            disabled={!!account}    // Nếu có account rồi thì không cho bấm nữa
                             className={`flex items-center justify-center gap-2 px-5 py-3 rounded-full mt-5 font-bold 
                                 transition-all shadow active:scale-95
                                 ${
@@ -100,7 +117,11 @@ const CharityHeader = () => {
                             `}
                         >
                             <FaWallet className="text-lg" />
-                            Connect Wallet
+                            {/* Logic hiển thị: Nếu có account thì hiện số ví, chưa có thì hiện Connect */}
+                            {account 
+                                ? `${account.slice(0, 6)}...${account.slice(-4)}` 
+                                : "Connect Wallet"
+                            }
                         </button>
                     </nav>
                 </div>
