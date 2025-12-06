@@ -6,6 +6,7 @@ contract Genesis {
     uint public projectTax;
     uint public projectCount;
     uint public balance;
+    uint public payOutDelay = 3 days;
     statsStruct public stats;
     projectStruct[] projects;
 
@@ -43,6 +44,7 @@ contract Genesis {
         uint cost;
         uint raised;
         uint timestamp;
+        uint payOutAt;
         uint expiresAt;
         uint backers;
         statusEnum status;
@@ -185,10 +187,9 @@ contract Genesis {
             block.timestamp
         );
 
-        if(projects[id].raised >= projects[id].cost) {
+        if (projects[id].raised >= projects[id].cost) {
             projects[id].status = statusEnum.APPROVED;
-            balance += projects[id].raised;
-            performPayout(id);
+            projects[id].payOutAt = block.timestamp + payOutDelay;
             return true;
         }
 
@@ -222,7 +223,7 @@ contract Genesis {
 
     function requestRefund(uint id) public returns (bool) {
         require(
-            projects[id].status != statusEnum.REVERTED ||
+            projects[id].status != statusEnum.REVERTED &&
             projects[id].status != statusEnum.DELETED,
             "Project not marked as revert or delete"
         );
@@ -239,7 +240,7 @@ contract Genesis {
             msg.sender == owner,
             "Unauthorized Entity"
         );
-
+        require(block.timestamp >= projects[id].payOutAt, "Payout delay not reached");
         performPayout(id);
         return true;
     }
