@@ -1,13 +1,14 @@
-import Hero from '../components/Hero'
-import Projects from '../components/Projects'
+import Hero from '../components/Hero';
+import Projects from '../components/Projects';
 
-const home = () => {
+const Home = () => {
   return (
-   <>
-    <Hero/>
-    <Projects/>
-   </>
-  )
-}
+    <main className="pt-20">
+      {/* pt-20 để tránh Header xuyên thấu che mất phần trên */}
+      <Hero />
+      <Projects />
+    </main>
+  );
+};
 
-export default home
+export default Home;

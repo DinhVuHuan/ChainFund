@@ -1,131 +1,126 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { HiMenu, HiX } from "react-icons/hi";
 import { LuSun, LuMoon } from "react-icons/lu";
 import { GiThreeLeaves } from "react-icons/gi";
 import { FaWallet } from "react-icons/fa";
 
-// 1. IMPORT HÀM KẾT NỐI TỪ SERVICE
+import useDarkMode from "../hooks/useDarkMode";
+
+// ⭐ GIỮ NGUYÊN – CONNECT WALLET
 import { connectWallet } from "../services/blockchain";
 
 const CharityHeader = () => {
     const [open, setOpen] = useState(false);
-    const [dark, setDark] = useState(false);
-    
-    // 2. STATE LƯU ĐỊA CHỈ VÍ
-    const [account, setAccount] = useState('');
+    const [scrolled, setScrolled] = useState(false);
+    const [account, setAccount] = useState("");
 
-    // 3. HÀM XỬ LÝ KHI BẤM NÚT
+    // 🌙 DÙNG HOOK DARK MODE
+    const { theme, toggleTheme } = useDarkMode();
+
+    const location = useLocation();
+
+    // 📌 Handle scroll blur
+    React.useEffect(() => {
+        const onScroll = () => setScrolled(window.scrollY > 20);
+        window.addEventListener("scroll", onScroll);
+        return () => window.removeEventListener("scroll", onScroll);
+    }, []);
+
+    // ⭐ CONNECT WALLET
     const handleConnect = async () => {
         const address = await connectWallet();
-        if(address) {
-            setAccount(address);
-            // setOpen(false); // Nếu muốn tự đóng menu sau khi kết nối thì bỏ comment dòng này
-        }
+        if (address) setAccount(address);
     };
+
+    const isActive = (path) => location.pathname === path;
 
     return (
         <header
-            className={`flex justify-between items-center p-5 fixed top-0 left-0 right-0 border-b-4 shadow
-                transition-colors z-50
-                ${
-                    dark
-                        ? "bg-gray-900 text-white border-green-700"
-                        : "bg-yellow-50 text-gray-800 border-green-600"
-                }
-            `}
+            className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300
+                ${scrolled
+                    ? "backdrop-blur-xl bg-white/60 dark:bg-gray-900/60 shadow-lg border-b border-gray-200 dark:border-gray-700"
+                    : "bg-transparent"
+                }`}
         >
-            {/* LOGO + TITLE */}
-            <Link to="/" className="flex items-center space-x-2">
-                <GiThreeLeaves
-                    className={`text-3xl ${
-                        dark ? "text-green-400" : "text-green-600"
-                    }`}
-                />
-                <span
-                    className={`text-2xl font-extrabold ${
-                        dark ? "text-green-300" : "text-green-700"
-                    }`}
-                >
-                    ChainFund Global
-                </span>
-            </Link>
+            <div className="flex justify-between items-center p-5 px-6 md:px-12">
 
-            {/* RIGHT SIDE BUTTONS */}
-            <div className="flex items-center gap-4">
+                {/* LOGO */}
+                <Link to="/" className="flex items-center space-x-2 group">
+                    <div className="w-11 h-11 flex items-center justify-center rounded-xl shadow-md
+                        bg-green-600/20 dark:bg-green-700/20
+                        transition-all duration-300 group-hover:scale-105 group-hover:rotate-3">
+                        <GiThreeLeaves className="text-3xl text-green-700 dark:text-green-400" />
+                    </div>
 
-                {/* THEME TOGGLE */}
+                    <span className="text-2xl font-extrabold tracking-wide text-green-700 dark:text-green-200">
+                        ChainFund <span className="text-green-500 dark:text-green-400">Global</span>
+                    </span>
+                </Link>
+
+                {/* DESKTOP NAV */}
+                <nav className="hidden md:flex items-center space-x-10">
+                    {[
+                        { name: "Home", path: "/" },
+                        { name: "Projects", path: "/projects" },
+                        { name: "Create", path: "/create" },
+                    ].map((link) => (
+                        <Link
+                            key={link.path}
+                            to={link.path}
+                            className={`relative text-lg font-medium transition
+                                ${isActive(link.path)
+                                    ? "text-green-500"
+                                    : "text-gray-700 dark:text-gray-200 hover:text-green-600 dark:hover:text-green-300"
+                                }`}
+                        >
+                            {link.name}
+                            {isActive(link.path) && (
+                                <span className="absolute -bottom-1 left-0 w-full h-[3px] bg-green-500 rounded-full"></span>
+                            )}
+                        </Link>
+                    ))}
+                </nav>
+
+                {/* RIGHT BUTTONS */}
+                <div className="hidden md:flex items-center space-x-4">
+
+                    {/* DARK MODE BUTTON */}
+                    <button
+                        onClick={toggleTheme}
+                        className="p-3 rounded-xl bg-white/40 dark:bg-gray-700/50 backdrop-blur hover:shadow transition"
+                    >
+                        {theme === "dark" ? (
+                            <LuSun className="text-xl text-yellow-300" />
+                        ) : (
+                            <LuMoon className="text-xl text-gray-600" />
+                        )}
+                    </button>
+
+                    {/* CONNECT WALLET */}
+                    <button
+                        onClick={handleConnect}
+                        disabled={!!account}
+                        className="flex items-center gap-2 px-5 py-3 rounded-full 
+                            bg-gradient-to-r from-green-500 to-green-600 text-white 
+                            font-semibold shadow hover:opacity-90 transition-all"
+                    >
+                        <FaWallet className="text-lg" />
+                        {account
+                            ? `${account.slice(0, 6)}...${account.slice(-4)}`
+                            : "Connect Wallet"}
+                    </button>
+                </div>
+
+                {/* MOBILE MENU BUTTON */}
                 <button
-                    onClick={() => setDark(!dark)}
-                    className={`p-2 rounded-full transition ${
-                        dark
-                            ? "bg-gray-700 hover:bg-gray-600"
-                            : "bg-yellow-200 hover:bg-yellow-300"
-                    }`}
+                    onClick={() => setOpen(true)}
+                    className="md:hidden p-2 rounded-lg bg-white/40 dark:bg-gray-700/50 backdrop-blur"
                 >
-                    {dark ? (
-                        <LuSun className="text-xl" />
-                    ) : (
-                        <LuMoon className="text-xl" />
-                    )}
-                </button>
-
-                {/* MENU BUTTON */}
-                <button onClick={() => setOpen(true)}>
                     <HiMenu className="text-3xl" />
                 </button>
             </div>
-
-            {/* SIDEBAR MENU */}
-            {open && (
-                <div
-                    className={`fixed top-0 right-0 w-64 h-full p-5 shadow-lg transition-colors z-50
-                        ${dark ? "bg-gray-800 text-white" : "bg-white text-gray-800"}
-                    `}
-                >
-                    {/* CLOSE BUTTON */}
-                    <button onClick={() => setOpen(false)}>
-                        <HiX className="text-3xl mb-5" />
-                    </button>
-
-                    {/* NAV LINKS */}
-                    <nav className="flex flex-col gap-5 text-lg">
-                        <Link to="/" onClick={() => setOpen(false)}>
-                            Home
-                        </Link>
-
-                        <Link to="/projects" onClick={() => setOpen(false)}>
-                            View Projects
-                        </Link>
-
-                        <Link to="/create" onClick={() => setOpen(false)}>
-                            Create Campaign
-                        </Link>
-
-                        {/* CONNECT WALLET BUTTON (ĐÃ SỬA) */}
-                        <button
-                            onClick={handleConnect} // Gọi hàm kết nối
-                            disabled={!!account}    // Nếu có account rồi thì không cho bấm nữa
-                            className={`flex items-center justify-center gap-2 px-5 py-3 rounded-full mt-5 font-bold 
-                                transition-all shadow active:scale-95
-                                ${
-                                    dark
-                                        ? "bg-green-600 hover:bg-green-700 text-white"
-                                        : "bg-green-600 hover:bg-green-700 text-white"
-                                }
-                            `}
-                        >
-                            <FaWallet className="text-lg" />
-                            {/* Logic hiển thị: Nếu có account thì hiện số ví, chưa có thì hiện Connect */}
-                            {account 
-                                ? `${account.slice(0, 6)}...${account.slice(-4)}` 
-                                : "Connect Wallet"
-                            }
-                        </button>
-                    </nav>
-                </div>
-            )}
         </header>
     );
 };
