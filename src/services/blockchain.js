@@ -106,3 +106,20 @@ export const donateToProject = async (projectId, ethAmount) => {
     alert("Donate thất bại! (Xem console để biết chi tiết)");
   }
 }
+
+export const getDonationHistory = async (userAddress) => {
+  try {
+    const { data, error } = await supabase
+      .from('donations')
+      .select('*')
+      .eq('backer_address', userAddress.toLowerCase())
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+    return data;
+
+  } catch (err) {
+    console.error("Lỗi lấy donation history:", err);
+    return [];
+  }
+}
