@@ -7,6 +7,7 @@ import Footer from "./components/Footer";
 import DonatePage from "./components/DonatePage";
 import ProjectDetail from "./components/ProjectDetail";
 import ProjectsPage from "./views/ProjectsPage";
+import CreateProject from "./views/CreateProjects";
 
 const App = () => {
   const [darkMode, setDarkMode] = useState(
@@ -35,6 +36,7 @@ const App = () => {
           <Route path="/" element={<Home />} />
           <Route path="/project/:id" element={<ProjectDetail />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/create" element={<CreateProject />} />
           <Route path="/donate/:id" element={<DonatePage />} />
         </Routes>
 
