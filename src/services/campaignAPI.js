@@ -39,6 +39,9 @@ export const createCampaign = async (walletAddress, campaignData) => {
     console.log("Đang chờ transaction...", tx.hash)
     const receipt = await tx.wait()
     const projectId = receipt.events?.find(e => e.event === 'Action')?.args?.id?.toNumber() || 0
+    // const actionEvent = receipt.events?.find(e => e.event === 'Action');
+    // if (!actionEvent) throw new Error("Không tìm thấy event Action!");
+    // const projectId = actionEvent.args.id.toNumber();
 
     // 3. Lưu campaign vào Supabase
     const { data, error } = await supabase

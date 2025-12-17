@@ -7,7 +7,7 @@
  */
 export const ADMIN_ADDRESSES = [
   "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", // Replace với address admin của bạn
-  // "0x70997970C51812e339D9B73b0245ad59e5E05a77", // Admin khác nếu có
+  "0x8fa4c621f86eba072148b2fd6a20ccdb21b2f913", // Admin khác nếu có
 ];
 
 /**

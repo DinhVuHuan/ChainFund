@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { HiMenu, HiX } from "react-icons/hi";
@@ -8,11 +8,12 @@ import { FaWallet } from "react-icons/fa";
 
 import useDarkMode from "../hooks/useDarkMode";
 import { connectWallet } from "../services/blockchain";
+import { useProjectContext } from "../context/ProjectContext";
 
 const CharityHeader = () => {
-  const [open, setOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-  const [account, setAccount] = useState("");
+  const [open, setOpen] = React.useState(false);
+  const [scrolled, setScrolled] = React.useState(false);
+  const { currentAccount, setAccount } = useProjectContext();
 
   const { theme, toggleTheme } = useDarkMode();
   const location = useLocation();
@@ -105,13 +106,13 @@ const CharityHeader = () => {
           {/* CONNECT WALLET */}
           <button
             onClick={handleConnect}
-            disabled={!!account}
+            disabled={!!currentAccount}
             className="flex items-center gap-2 px-5 py-3 rounded-full 
               bg-gradient-to-r from-green-500 to-green-600 text-white 
               font-semibold shadow hover:opacity-90 transition-all"
           >
             <FaWallet className="text-lg" />
-            {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
+            {currentAccount ? `${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}` : "Connect Wallet"}
           </button>
         </div>
 
