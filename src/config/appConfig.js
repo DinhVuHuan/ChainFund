@@ -32,9 +32,33 @@ export const CONTRACT_CONFIG = {
     }
     return '0x5fbdb2315678afecb367f032d93f642f64180aa3';
   })(),
-  network: "hardhat", // hardhat, sepolia, mainnet
-  chainId: 31337, // Hardhat: 31337, Sepolia: 11155111, Mainnet: 1
-  rpcUrl: process.env.REACT_APP_RPC_URL || '' // Optional read-only RPC URL for server-side queries
+  
+  // Network config - auto detect from contractAddress.json or env
+  network: (() => {
+    const envNetwork = process.env.REACT_APP_NETWORK;
+    if (envNetwork) return envNetwork;
+    try {
+      const ca = require('../abis/contractAddress.json');
+      if (ca && ca.network) return ca.network;
+    } catch (e) {
+      // ignore
+    }
+    return 'localhost';
+  })(),
+  
+  chainId: (() => {
+    const envChainId = process.env.REACT_APP_CHAIN_ID;
+    if (envChainId) return parseInt(envChainId);
+    try {
+      const ca = require('../abis/contractAddress.json');
+      if (ca && ca.chainId) return ca.chainId;
+    } catch (e) {
+      // ignore
+    }
+    return 31337; // Default: Hardhat
+  })(),
+  
+  rpcUrl: process.env.REACT_APP_RPC_URL || '' // Optional read-only RPC URL
 };
 
 /**
