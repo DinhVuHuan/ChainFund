@@ -20,12 +20,20 @@ const ProjectsPage = () => {
     const filteredProjects = searchFiltered.filter((p) => {
         if (filter === "All") return true;
         if (filter === "Active") return p.status === "Active";
-        if (filter === "Completed")
-            return p.status === "Goal Met" || p.status === "Overfunded";
+        if (filter === "Expired") return p.status === "Expired";
+        if (filter === "Completed") return p.status === "Approved" || p.status === "Goal Met" || p.status === "Overfunded";
         return true;
     });
 
-    const projectsToShow = filteredProjects.slice(0, visibleCount);
+    // Sort: active first, then newest
+    const sorted = [...filteredProjects].sort((a,b)=>{
+        const aActive = a.status === 'Active' ? 0 : 1
+        const bActive = b.status === 'Active' ? 0 : 1
+        if (aActive !== bActive) return aActive - bActive
+        return (b.createdAt || 0) - (a.createdAt || 0)
+    })
+
+    const projectsToShow = sorted.slice(0, visibleCount);
 
     return (
         <div className="pt-32 px-6 bg-gray-100 dark:bg-gray-800 min-h-screen transition-colors duration-300">
@@ -55,7 +63,7 @@ const ProjectsPage = () => {
 
                 {/* FILTER BUTTONS */}
                 <div className="flex gap-3">
-                    {["All", "Active", "Completed"].map((f) => (
+                    {["All", "Active", "Expired", "Completed"].map((f) => (
                         <button
                             key={f}
                             onClick={() => setFilter(f)}
@@ -79,17 +87,19 @@ const ProjectsPage = () => {
             {/* PROJECT GRID */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">
                 {projectsToShow.map((p, i) => {
-                    const isFunded = p.status === "Goal Met" || p.status === "Overfunded";
+                    const isActive = p.status === 'Active' || p.status === 'OPEN' || p.status === 'Open'
+                    const isFunded = p.status === "Approved" || p.status === "Goal Met" || p.status === "Overfunded";
 
                     return (
-                        <Link
-                            to={`/project/${p.id}`}
-                            key={p.id ?? i}
-                            className="
-                bg-white dark:bg-gray-700 rounded-xl shadow-lg
-                overflow-hidden hover:shadow-2xl transition transform hover:scale-[1.03]
-              "
-                        >
+                                                <Link
+                                                        to={`/project/${p.id}`}
+                                                        key={p.id ?? i}
+                                                        className={`
+                                bg-white dark:bg-gray-700 rounded-xl shadow-lg
+                                overflow-hidden hover:shadow-2xl transition transform hover:scale-[1.03]
+                                ${!isActive ? 'opacity-60' : ''}
+                            `}
+                                                >
                             <div className="relative">
                                 <img
                                     src={p.image || `https://picsum.photos/400/300?random=${i}`}
@@ -97,13 +107,12 @@ const ProjectsPage = () => {
                                     className="w-full h-48 object-cover"
                                 />
 
-                                <span
-                                    className={`absolute top-3 right-3 text-white text-xs font-semibold px-3 py-1 rounded-full ${isFunded ? "bg-green-600" : "bg-red-600"
-                                        } flex items-center`}
-                                >
-                                    {isFunded && <FaStar className="mr-1" />}
-                                    {isFunded ? "FUNDED" : "LIVE"}
-                                </span>
+                                            <span
+                                                className={`absolute top-3 right-3 text-xs font-semibold px-3 py-1 rounded-full ${isFunded ? 'bg-green-600 text-white' : !isActive ? 'bg-yellow-500 text-white' : 'bg-red-600 text-white'} flex items-center`}
+                                            >
+                                                {isFunded && <FaStar className="mr-1" />}
+                                                {isFunded ? "FUNDED" : (!isActive ? 'EXPIRED' : 'LIVE')}
+                                            </span>
                             </div>
 
                             <div className="p-5">

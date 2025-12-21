@@ -92,18 +92,25 @@ const DonatePage = () => {
 
           {donations.map((item, index) => (
             <div
-              key={index}
+              key={item.id || index}
               className="
                 flex justify-between text-sm py-2 border-b
                 border-gray-200 dark:border-gray-700
               "
             >
               <span className="text-gray-600 dark:text-gray-300">
-                {item.backer_address.slice(0, 6)}...
+                {(() => {
+                  const addr = item.donor_address || item.backer_address || item.backer || item.backerAddress || ''
+                  if (!addr) return 'Unknown'
+                  const a = String(addr)
+                  const start = a.length > 6 ? a.slice(0, 6) : a
+                  const end = a.length > 4 ? a.slice(-4) : ''
+                  return end ? `${start}...${end}` : start
+                })()}
               </span>
 
               <span className="text-green-600 dark:text-green-400 font-bold">
-                +{item.amount} ETH
+                +{item.amount || item.amount_eth || item.amountEth || '0'} ETH
               </span>
             </div>
           ))}

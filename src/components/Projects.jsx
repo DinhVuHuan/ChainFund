@@ -1,18 +1,23 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useProjectContext } from "../context/ProjectContext";
 import { Link } from "react-router-dom";
 import { FaClock, FaHeart, FaCheckCircle, FaStar } from "react-icons/fa";
 
 const ProjectCard = ({ p, i }) => {
-  const isFunded = p.status === "Goal Met" || p.status === "Overfunded";
+  const isActive = p.status === 'Active' || p.status === 'OPEN' || p.status === 'Open'
+  const isFunded = p.status === "Approved" || p.status === "Goal Met" || p.status === "Overfunded";
+  const isExpired = p.status === 'Expired'
+  const badgeLabel = isFunded ? 'FUNDED' : isExpired ? 'EXPIRED' : 'LIVE'
+  const badgeClass = isFunded ? 'bg-green-600 text-white' : isExpired ? 'bg-yellow-500 text-white' : 'bg-red-600 text-white'
 
   return (
     <Link
       to={`/project/${p.id}`}
-      className="
+      className={`
         bg-white dark:bg-gray-700 rounded-xl shadow-lg
         overflow-hidden hover:shadow-2xl transition transform hover:scale-[1.03]
-      "
+        ${!isActive ? 'opacity-60' : ''}
+      `}
     >
       <div className="relative">
         <img
@@ -21,12 +26,11 @@ const ProjectCard = ({ p, i }) => {
           className="w-full h-48 object-cover"
         />
 
-        <span
-          className={`absolute top-3 right-3 text-white text-xs font-semibold px-3 py-1 rounded-full ${isFunded ? "bg-green-600" : "bg-red-600"
-            } flex items-center`}
+          <span
+          className={`absolute top-3 right-3 text-xs font-semibold px-3 py-1 rounded-full ${badgeClass} flex items-center`}
         >
           {isFunded && <FaStar className="mr-1" />}
-          {isFunded ? "FUNDED" : "LIVE"}
+          {badgeLabel}
         </span>
       </div>
 
@@ -75,22 +79,33 @@ const ProjectCard = ({ p, i }) => {
   );
 };
 
-const Projects = () => {
+const Projects = ({ externalFilter = null, showFilter = true }) => {
   const { projects } = useProjectContext();
 
-  const [filter, setFilter] = useState("All");
+  const [filter, setFilter] = useState(externalFilter || "All");
+  useEffect(() => {
+    if (externalFilter !== null && externalFilter !== undefined) setFilter(externalFilter)
+  }, [externalFilter])
   const [visibleCount, setVisibleCount] = useState(6);
 
   // FILTER
   const filteredProjects = projects.filter((p) => {
     if (filter === "All") return true;
     if (filter === "Active") return p.status === "Active";
-    if (filter === "Completed")
-      return p.status === "Goal Met" || p.status === "Overfunded";
+    if (filter === "Expired") return p.status === "Expired";
+    if (filter === "Completed") return p.status === "Approved" || p.status === "Goal Met" || p.status === "Overfunded";
     return true;
   });
 
-  const projectsToShow = filteredProjects.slice(0, visibleCount);
+  // Sort: active first, then others
+  const sorted = [...filteredProjects].sort((a, b) => {
+    const aActive = a.status === 'Active' ? 0 : 1
+    const bActive = b.status === 'Active' ? 0 : 1
+    if (aActive !== bActive) return aActive - bActive
+    return (b.createdAt || 0) - (a.createdAt || 0)
+  })
+
+  const projectsToShow = sorted.slice(0, visibleCount);
 
   return (
     <div className="pt-0 px-6 bg-gray-100 dark:bg-gray-800 min-h-screen transition-colors duration-300">
@@ -101,20 +116,22 @@ const Projects = () => {
       </h1>
 
       {/* FILTER */}
-      <div className="flex justify-center gap-4 mb-8">
-        {["All", "Active", "Completed"].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-5 py-2 rounded-full font-semibold shadow-md transition-all duration-300 ${filter === f
-              ? "bg-green-600 text-white shadow-lg scale-105"
-              : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-green-100 dark:hover:bg-gray-600 hover:text-green-700"
-              }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      {showFilter && (
+        <div className="flex justify-center gap-4 mb-8">
+          {["All", "Active", "Expired", "Completed"].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-5 py-2 rounded-full font-semibold shadow-md transition-all duration-300 ${filter === f
+                ? "bg-green-600 text-white shadow-lg scale-105"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-green-100 dark:hover:bg-gray-600 hover:text-green-700"
+                }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">

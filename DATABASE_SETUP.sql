@@ -1,7 +1,10 @@
--- ===== SUPABASE DATABASE SETUP =====
--- Chạy các SQL queries sau trong Supabase SQL Editor
+-- DATABASE_SETUP.sql
+-- Fresh, idempotent DB schema for ChainFund project
+-- Safe to run in Supabase SQL editor. Re-running will not break existing objects.
 
--- 1. Users table (quản lý user accounts)
+BEGIN;
+
+-- 1. Users table
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   address VARCHAR(42) UNIQUE NOT NULL,
@@ -11,9 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_address ON users(address);
-
--- 2. Campaigns table (lưu thông tin campaigns)
+-- 2. Campaigns table
 CREATE TABLE IF NOT EXISTS campaigns (
   id BIGSERIAL PRIMARY KEY,
   project_id INTEGER UNIQUE NOT NULL,
@@ -28,14 +29,10 @@ CREATE TABLE IF NOT EXISTS campaigns (
   created_at TIMESTAMP DEFAULT NOW(),
   expires_at TIMESTAMP,
   updated_at TIMESTAMP DEFAULT NOW(),
-  FOREIGN KEY (owner_address) REFERENCES users(address)
+  FOREIGN KEY (owner_address) REFERENCES users(address) ON DELETE RESTRICT
 );
 
-CREATE INDEX idx_campaigns_status ON campaigns(status);
-CREATE INDEX idx_campaigns_owner ON campaigns(owner_address);
-CREATE INDEX idx_campaigns_project_id ON campaigns(project_id);
-
--- 3. Donations table (quản lý donations)
+-- 3. Donations table
 CREATE TABLE IF NOT EXISTS donations (
   id BIGSERIAL PRIMARY KEY,
   project_id INTEGER NOT NULL,
@@ -45,37 +42,94 @@ CREATE TABLE IF NOT EXISTS donations (
   transaction_hash VARCHAR(255) UNIQUE,
   status VARCHAR(50) DEFAULT 'CONFIRMED', -- CONFIRMED, PENDING, FAILED
   donated_at TIMESTAMP DEFAULT NOW(),
-  FOREIGN KEY (project_id) REFERENCES campaigns(project_id),
-  FOREIGN KEY (donor_address) REFERENCES users(address)
+  FOREIGN KEY (project_id) REFERENCES campaigns(project_id) ON DELETE RESTRICT,
+  FOREIGN KEY (donor_address) REFERENCES users(address) ON DELETE RESTRICT
 );
 
-CREATE INDEX idx_donations_project ON donations(project_id);
-CREATE INDEX idx_donations_donor ON donations(donor_address);
-CREATE INDEX idx_donations_status ON donations(status);
-CREATE INDEX idx_donations_tx_hash ON donations(transaction_hash);
+-- 4. Idempotent index creation
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_users_address') THEN
+    CREATE INDEX idx_users_address ON users(address);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_campaigns_status') THEN
+    CREATE INDEX idx_campaigns_status ON campaigns(status);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_campaigns_owner') THEN
+    CREATE INDEX idx_campaigns_owner ON campaigns(owner_address);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_campaigns_project_id') THEN
+    CREATE INDEX idx_campaigns_project_id ON campaigns(project_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_donations_project') THEN
+    CREATE INDEX idx_donations_project ON donations(project_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_donations_donor') THEN
+    CREATE INDEX idx_donations_donor ON donations(donor_address);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_donations_status') THEN
+    CREATE INDEX idx_donations_status ON donations(status);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'idx_donations_tx_hash') THEN
+    CREATE INDEX idx_donations_tx_hash ON donations(transaction_hash);
+  END IF;
+END$$;
 
--- 4. Enable RLS (Row Level Security) - tùy chọn
--- ALTER TABLE users ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE donations ENABLE ROW LEVEL SECURITY;
+-- 5. Triggers: ensure referenced users exist and normalize addresses
+-- Function: ensure a user row exists for campaign.owner_address
+CREATE OR REPLACE FUNCTION ensure_user_exists_for_campaign()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.owner_address IS NOT NULL THEN
+    NEW.owner_address := LOWER(NEW.owner_address);
+    IF NOT EXISTS (SELECT 1 FROM users WHERE address = NEW.owner_address) THEN
+      INSERT INTO users(address, is_admin, nonce, created_at, updated_at)
+      VALUES (NEW.owner_address, false, floor(random() * 1000000)::text, NOW(), NOW());
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- 5. Create policies (tùy chọn - cho phép user chỉ xem dữ liệu của họ)
--- CREATE POLICY "Users can view their own data"
---   ON users FOR SELECT
---   USING (auth.uid()::text = address);
+-- Function: ensure a user row exists for donation.donor_address
+CREATE OR REPLACE FUNCTION ensure_user_exists_for_donation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.donor_address IS NOT NULL THEN
+    NEW.donor_address := LOWER(NEW.donor_address);
+    IF NOT EXISTS (SELECT 1 FROM users WHERE address = NEW.donor_address) THEN
+      INSERT INTO users(address, is_admin, nonce, created_at, updated_at)
+      VALUES (NEW.donor_address, false, floor(random() * 1000000)::text, NOW(), NOW());
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- ===== QUERIES TIỆN DỤNG =====
+-- Attach triggers (drop existing first to be idempotent)
+DROP TRIGGER IF EXISTS trg_ensure_user_campaign ON campaigns;
+CREATE TRIGGER trg_ensure_user_campaign
+BEFORE INSERT OR UPDATE ON campaigns
+FOR EACH ROW
+EXECUTE FUNCTION ensure_user_exists_for_campaign();
 
--- Lấy tổng donation của 1 campaign
+DROP TRIGGER IF EXISTS trg_ensure_user_donation ON donations;
+CREATE TRIGGER trg_ensure_user_donation
+BEFORE INSERT OR UPDATE ON donations
+FOR EACH ROW
+EXECUTE FUNCTION ensure_user_exists_for_donation();
+
+-- 6. Seed admin users (use the default admin addresses from appConfig)
+-- Update these addresses if you modify ADMIN_ADDRESSES in src/config/appConfig.js
+INSERT INTO users(address, is_admin, nonce, created_at, updated_at)
+VALUES
+  ('0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266', TRUE, floor(random() * 1000000)::text, NOW(), NOW()),
+  ('0x8fa4c621f86eba072148b2fd6a20ccdb21b2f913', TRUE, floor(random() * 1000000)::text, NOW(), NOW())
+ON CONFLICT (address) DO UPDATE SET is_admin = EXCLUDED.is_admin;
+
+COMMIT;
+
+-- Helpful queries (run separately as needed):
 -- SELECT SUM(amount_eth) as total FROM donations WHERE project_id = 1 AND status = 'CONFIRMED';
-
--- Lấy danh sách top donors
--- SELECT donor_address, SUM(amount_eth) as total_donated FROM donations 
--- WHERE status = 'CONFIRMED' GROUP BY donor_address ORDER BY total_donated DESC LIMIT 10;
-
--- Lấy campaigns của 1 owner
--- SELECT * FROM campaigns WHERE owner_address = '0x...' ORDER BY created_at DESC;
-
--- Cập nhật status campaign khi raised >= target
--- UPDATE campaigns SET status = 'SUCCESSFUL', updated_at = NOW() 
--- WHERE project_id = 1 AND raised_amount >= target_amount;
+-- SELECT donor_address, SUM(amount_eth) as total_donated FROM donations WHERE status = 'CONFIRMED' GROUP BY donor_address ORDER BY total_donated DESC LIMIT 10;
+-- UPDATE campaigns SET status = 'SUCCESSFUL', updated_at = NOW() WHERE project_id = 1 AND raised_amount >= target_amount;

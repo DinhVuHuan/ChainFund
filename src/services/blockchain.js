@@ -1,7 +1,23 @@
 import { ethers } from 'ethers'
-import { supabase } from './supabaseClients' 
+import { supabase } from './supabaseClients'
 import GenesisABI from '../abis/src/contracts/Genesis.sol/Genesis.json'
 import { CONTRACT_CONFIG } from '../config/appConfig'
+import { recordDonation } from './donationAPI'
+
+// Helper: get a provider. Prefer injected `window.ethereum`, otherwise use RPC URL from config.
+const getProvider = (useSigner = false) => {
+  if (typeof window !== 'undefined' && window.ethereum) {
+    const provider = new ethers.providers.Web3Provider(window.ethereum)
+    return useSigner ? provider.getSigner() : provider
+  }
+
+  if (CONTRACT_CONFIG && CONTRACT_CONFIG.rpcUrl) {
+    const provider = new ethers.providers.JsonRpcProvider(CONTRACT_CONFIG.rpcUrl)
+    return provider
+  }
+
+  throw new Error('No provider available. Install MetaMask or set REACT_APP_RPC_URL')
+}
 
 const contractAddress = CONTRACT_CONFIG.address 
 
@@ -13,7 +29,7 @@ export const connectWallet = async () => {
       return null;
     }
 
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const provider = getProvider()
     await provider.send("eth_requestAccounts", []);
     const signer = provider.getSigner();
     const address = await signer.getAddress();
@@ -128,7 +144,7 @@ export const getUserInfo = async (walletAddress) => {
 // Get wallet balance
 export const getWalletBalance = async (walletAddress) => {
   try {
-    const provider = new ethers.providers.Web3Provider(window.ethereum)
+    const provider = getProvider(false)
     const balance = await provider.getBalance(walletAddress)
     return ethers.utils.formatEther(balance)
   } catch (error) {
@@ -140,7 +156,7 @@ export const getWalletBalance = async (walletAddress) => {
 // Get contract balance
 export const getContractBalance = async () => {
   try {
-    const provider = new ethers.providers.Web3Provider(window.ethereum)
+    const provider = getProvider(false)
     const balance = await provider.getBalance(contractAddress)
     return ethers.utils.formatEther(balance)
   } catch (error) {
@@ -176,20 +192,8 @@ export const donateToProject = async (projectId, ethAmount) => {
     console.log("Đang chờ xác nhận...", tx.hash);
     await tx.wait(); 
 
-    // 2. Lưu vào Supabase
-    const { error } = await supabase
-      .from('donations')
-      .insert([
-        {
-          donor_address: address.toLowerCase(),
-          amount_eth: ethAmount,
-          project_id: projectId,
-          transaction_hash: tx.hash,
-          status: 'CONFIRMED'
-        }
-      ]);
-
-    if (error) throw error;
+    // 2. Ghi donation vào DB (sử dụng helper chung để update raised_amount)
+    await recordDonation(projectId, ethAmount, address, tx.hash)
 
     console.log("Donation thành công!")
     return { success: true, txHash: tx.hash }
@@ -208,7 +212,7 @@ export const getDonationHistory = async (userAddress) => {
     const { data, error } = await supabase
       .from('donations')
       .select('*')
-      .eq('backer_address', userAddress.toLowerCase())
+      .eq('donor_address', userAddress.toLowerCase())
       .order('id', { ascending: false });
 
     if (error) throw error;

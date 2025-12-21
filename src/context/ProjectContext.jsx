@@ -1,26 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { listCampaigns, getCampaignsByOwner } from "../services/campaignAPI";
+import { listCampaigns, getCampaignsByOwner, setCampaignStatusInDb } from "../services/campaignAPI";
 import { getAllProjectsFromBlockchain } from "../services/blockchain";
 
 const ProjectContext = createContext();
 
 export const ProjectProvider = ({ children }) => {
-  const [projects, setProjects] = useState([
-    {
-      id: 0,
-      title: "Vietnam Flood Relief Fund",
-      owner: "Admin",
-      amountRaised: 2.5,
-      target: 5,
-      backers: 150,
-      daysLeft: 10,
-      progress: 50,
-      status: "Active",
-      image: "https://picsum.photos/600/350?random=0",
-      description:
-        "This campaign provides emergency support to families affected by severe flooding in Central Vietnam.",
-    },
-  ]);
+  // Start with an empty list; we'll populate from DB and blockchain
+  const [projects, setProjects] = useState([]);
 
   const [currentAccount, setCurrentAccount] = useState(null);
   const [admin, setAdmin] = useState(null);
@@ -55,7 +41,23 @@ export const ProjectProvider = ({ children }) => {
           expiresAt: c.expires_at,
         }));
         
-        setProjects([...projects.slice(0, 1), ...formattedCampaigns]); // Keep default campaign
+        // compute derived statuses and update DB if needed
+        const now = Date.now()
+        for (const fc of formattedCampaigns) {
+          const expires = new Date(fc.expiresAt).getTime()
+          const raised = parseFloat(fc.amountRaised || 0)
+          const target = parseFloat(fc.target || 0)
+          let derived = 'Active'
+          if (expires <= now && raised < target) derived = 'Expired'
+          else if (raised >= target && now <= expires) derived = 'Approved'
+          // if derived differs from DB status, update
+          if (fc.status !== derived) {
+            try { await setCampaignStatusInDb(fc.id, derived) } catch (e) { console.warn('Could not sync status to DB', e) }
+            fc.status = derived
+          }
+        }
+
+        setProjects(formattedCampaigns);
       }
     } catch (error) {
       console.error("Lỗi load campaigns:", error);
@@ -97,20 +99,43 @@ export const ProjectProvider = ({ children }) => {
       setLoading(true);
       const blockchainProjects = await getAllProjectsFromBlockchain();
       const dbCampaigns = await listCampaigns();
-      
+
+      const now = Date.now()
       const mergedCampaigns = blockchainProjects.map((bp) => {
-        const dbCampaign = dbCampaigns.find(dc => dc.project_id === bp.id);
-        return {
-          ...bp,
-          amountRaised: parseFloat(bp.raised),
-          daysLeft: Math.ceil((new Date(bp.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)),
-          progress: (parseFloat(bp.raised) / parseFloat(bp.cost)) * 100,
-          image: bp.imageURL,
-          ...dbCampaign,
-        };
-      });
-      
-      setProjects([...projects.slice(0, 1), ...mergedCampaigns]);
+        const dbCampaign = dbCampaigns.find(dc => dc.project_id === bp.id) || {}
+        const raised = parseFloat(bp.raised)
+        const cost = parseFloat(bp.cost)
+        const expires = new Date(bp.expiresAt).getTime()
+        let derived = 'Active'
+        if (expires <= now && raised < cost) derived = 'Expired'
+        else if (raised >= cost && now <= expires) derived = 'Approved'
+
+        // Merge mapping
+        const merged = {
+          id: bp.id,
+          title: bp.title,
+          owner: bp.owner,
+          amountRaised: raised,
+          target: cost,
+          backers: bp.backers || 0,
+          daysLeft: Math.ceil((expires - now) / (1000 * 60 * 60 * 24)),
+          progress: cost > 0 ? (raised / cost) * 100 : 0,
+          status: dbCampaign.status || derived,
+          image: dbCampaign.image_url || bp.imageURL,
+          description: dbCampaign.description || bp.description,
+          createdAt: dbCampaign.created_at || bp.timestamp,
+          expiresAt: dbCampaign.expires_at || bp.expiresAt
+        }
+
+        // Sync DB status if differs
+        if ((dbCampaign.status || '') !== merged.status) {
+          setCampaignStatusInDb(merged.id, merged.status).catch(e => console.warn('status sync failed', e))
+        }
+
+        return merged
+      })
+
+      setProjects(mergedCampaigns);
     } catch (error) {
       console.error("Lỗi refresh campaigns:", error);
     } finally {

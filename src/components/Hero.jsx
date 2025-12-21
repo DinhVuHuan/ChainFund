@@ -1,4 +1,5 @@
 import React from "react";
+import { useProjectContext } from "../context/ProjectContext";
 import { FaWallet, FaPlusCircle, FaHandsHelping, FaChartLine } from "react-icons/fa";
 import { Link } from "react-router-dom"; // ✅ Import Link
 
@@ -40,12 +41,8 @@ const Hero = () => {
 
             {/* STATS */}
             <div className="flex justify-center items-stretch mt-16 space-x-4 max-w-3xl mx-auto">
-                {/* Projects */}
-                <div className="flex flex-col flex-1 justify-center items-center p-5 bg-white dark:bg-gray-700 shadow-md rounded-2xl border-t-4 border-yellow-500 transition-colors duration-300">
-                    <FaChartLine className="text-yellow-600 text-2xl mb-1" />
-                    <span className="text-2xl font-bold text-gray-800 dark:text-gray-200 mt-1">0</span>
-                    <span className="text-gray-500 dark:text-gray-400 text-sm mt-1">Active Projects</span>
-                </div>
+                            {/* Projects */}
+                            <ActiveProjectsStat />
 
                 {/* Backings */}
                 <div className="flex flex-col flex-1 justify-center items-center p-5 bg-white dark:bg-gray-700 shadow-md rounded-2xl border-t-4 border-green-500 transition-colors duration-300">
@@ -66,3 +63,16 @@ const Hero = () => {
 };
 
 export default Hero;
+
+function ActiveProjectsStat() {
+    const { projects } = useProjectContext();
+    const activeCount = projects ? projects.filter(p => p.status === 'Active').length : 0;
+
+    return (
+        <div className="flex flex-col flex-1 justify-center items-center p-5 bg-white dark:bg-gray-700 shadow-md rounded-2xl border-t-4 border-yellow-500 transition-colors duration-300">
+            <FaChartLine className="text-yellow-600 text-2xl mb-1" />
+            <span className="text-2xl font-bold text-gray-800 dark:text-gray-200 mt-1">{activeCount}</span>
+            <span className="text-gray-500 dark:text-gray-400 text-sm mt-1">Active Projects</span>
+        </div>
+    )
+}

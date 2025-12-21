@@ -19,20 +19,20 @@ async function main() {
 
   // 4. Lưu địa chỉ vào file JSON để React dùng
   const address = JSON.stringify({ address: contract.address }, null, 4)
-  
-  // Đảm bảo thư mục tồn tại trước khi ghi file
-  const dir = './src/abis';
-  if (!fs.existsSync(dir)){
-      fs.mkdirSync(dir, { recursive: true });
+  const path = require('path');
+  const outDir = path.resolve(__dirname, '..', 'src', 'abis');
+  if (!fs.existsSync(outDir)){
+      fs.mkdirSync(outDir, { recursive: true });
   }
-
-  fs.writeFile('./src/abis/contractAddress.json', address, 'utf8', (err) => {
-    if (err) {
-      console.error(err)
-      return
-    }
-    console.log('Deploy thành công! Địa chỉ:', contract.address)
-  })
+  const outPath = path.resolve(outDir, 'contractAddress.json');
+  // Use synchronous write to ensure file is written before process exit
+  try {
+    fs.writeFileSync(outPath, address, 'utf8')
+    console.log('Deploy thành công! Wrote', outPath)
+  } catch (err) {
+    console.error('Lỗi khi ghi file địa chỉ hợp đồng:', err)
+    throw err
+  }
 }
 
 // 5. Thêm đoạn này để chạy hàm main (Code cũ của bạn thiếu đoạn này nên nó không chạy đâu)

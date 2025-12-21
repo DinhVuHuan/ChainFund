@@ -32,7 +32,20 @@ export const donateToCampaign = async (projectId, ethAmount, walletAddress) => {
     console.log("Donation transaction:", tx.hash)
     const receipt = await tx.wait()
 
-    // 2. Lưu donation vào Supabase
+    // 2. Lưu donation vào Supabase (sử dụng helper để tránh duplication)
+    const record = await recordDonation(projectId, ethAmount, walletAddress, tx.hash)
+    return record
+  } catch (error) {
+    console.error("Lỗi donate:", error)
+    throw error
+  }
+}
+
+/**
+ * Ghi donation vào DB sau khi tx đã confirmed
+ */
+export const recordDonation = async (projectId, ethAmount, walletAddress, txHash) => {
+  try {
     const { data, error } = await supabase
       .from('donations')
       .insert([
@@ -40,8 +53,8 @@ export const donateToCampaign = async (projectId, ethAmount, walletAddress) => {
           project_id: projectId,
           donor_address: walletAddress.toLowerCase(),
           amount_eth: parseFloat(ethAmount),
-          amount_usd: null, // Có thể update sau với price API
-          transaction_hash: tx.hash,
+          amount_usd: null,
+          transaction_hash: txHash,
           status: 'CONFIRMED',
           donated_at: new Date()
         }
@@ -51,24 +64,23 @@ export const donateToCampaign = async (projectId, ethAmount, walletAddress) => {
 
     if (error) throw error
 
-    // 3. Update raised_amount ở campaigns table
-    const campaign = await supabase
+    // Update raised_amount ở campaigns table
+    const { data: campaign, error: campErr } = await supabase
       .from('campaigns')
       .select('raised_amount')
       .eq('project_id', projectId)
       .single()
 
-    if (campaign.data) {
+    if (!campErr && campaign) {
       await supabase
         .from('campaigns')
-        .update({ raised_amount: (campaign.data.raised_amount || 0) + parseFloat(ethAmount) })
+        .update({ raised_amount: (campaign.raised_amount || 0) + parseFloat(ethAmount) })
         .eq('project_id', projectId)
     }
 
-    console.log("Donation đã được lưu:", data)
     return data
   } catch (error) {
-    console.error("Lỗi donate:", error)
+    console.error('Lỗi recordDonation:', error)
     throw error
   }
 }
@@ -280,22 +292,24 @@ export const getTopDonors = async (limit = 10) => {
  */
 export const getDonationStats = async () => {
   try {
+    // Lấy tất cả donations confirmed, tính toán tổng và distinct donors
     const { data: donations, error } = await supabase
       .from('donations')
-      .select('amount_eth, status')
+      .select('amount_eth, donor_address')
       .eq('status', 'CONFIRMED')
 
     if (error) throw error
 
     const totalDonations = donations.length
-    const totalAmount = donations.reduce((sum, d) => sum + d.amount_eth, 0)
+    const totalAmount = donations.reduce((sum, d) => sum + (parseFloat(d.amount_eth) || 0), 0)
     const avgDonation = totalDonations > 0 ? totalAmount / totalDonations : 0
+    const uniqueDonors = new Set((donations || []).map(d => d.donor_address)).size
 
     return {
       totalDonations,
       totalAmount,
       avgDonation: parseFloat(avgDonation.toFixed(4)),
-      uniqueDonors: donations.length // Sẽ cần SQL distinct để chính xác hơn
+      uniqueDonors
     }
   } catch (error) {
     console.error("Lỗi lấy donation stats:", error)
@@ -310,7 +324,7 @@ export const formatDonationData = (donation) => {
   return {
     id: donation.id,
     projectId: donation.project_id,
-    donor: donation.donor_address.substring(0, 6) + '...' + donation.donor_address.substring(-4),
+    donor: donation.donor_address.substring(0, 6) + '...' + donation.donor_address.slice(-4),
     amount: parseFloat(donation.amount_eth),
     txHash: donation.transaction_hash,
     status: donation.status,

@@ -1,11 +1,12 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
-contract Genesis {
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract Genesis is ReentrancyGuard {
     address public owner;
     uint public projectTax;
     uint public projectCount;
-    uint public balance;
     uint public payOutDelay = 3 days;
     statsStruct public stats;
     projectStruct[] projects;
@@ -61,6 +62,11 @@ contract Genesis {
         address indexed executor,
         uint256 timestamp
     );
+
+    // More specific events for frontend/backend listeners
+    event ProjectBacked(uint256 indexed id, address indexed backer, uint256 amount, uint256 timestamp);
+    event RefundProcessed(uint256 indexed id, address indexed recipient, uint256 amount, uint256 timestamp);
+    event PayoutProcessed(uint256 indexed id, address indexed recipient, uint256 amount, uint256 tax, uint256 timestamp);
 
     constructor(uint _projectTax) {
         owner = msg.sender;
@@ -130,11 +136,12 @@ contract Genesis {
         return true;
     }
 
-    function deleteProject(uint id) public returns (bool) {
+    function deleteProject(uint id) public nonReentrant returns (bool) {
         require(projects[id].status == statusEnum.OPEN, "Project no longer opened");
         require(msg.sender == projects[id].owner, "Unauthorized Entity");
 
         projects[id].status = statusEnum.DELETED;
+        // protect from reentrancy when performing refunds
         performRefund(id);
 
         emit Action (
@@ -148,20 +155,29 @@ contract Genesis {
     }
 
     function performRefund(uint id) internal {
+        // Checks-Effects-Interactions: mark refunded and zero out contribution before external call
         for(uint i = 0; i < backersOf[id].length; i++) {
             address _owner = backersOf[id][i].owner;
             uint _contribution = backersOf[id][i].contribution;
-            
+
+            if(_contribution == 0) continue;
+
+            // effect: mark refunded and zero contribution to prevent reentrancy double-spend
             backersOf[id][i].refunded = true;
             backersOf[id][i].timestamp = block.timestamp;
+            backersOf[id][i].contribution = 0;
+
+            // interaction
             payTo(_owner, _contribution);
+
+            emit RefundProcessed(id, _owner, _contribution, block.timestamp);
 
             stats.totalBacking -= 1;
             stats.totalDonations -= _contribution;
         }
     }
 
-    function backProject(uint id) public payable returns (bool) {
+    function backProject(uint id) public payable nonReentrant returns (bool) {
         require(msg.value > 0 ether, "Ether must be greater than zero");
         require(projectExist[id], "Project not found");
         require(projects[id].status == statusEnum.OPEN, "Project no longer opened");
@@ -179,6 +195,8 @@ contract Genesis {
                 false
             )
         );
+
+        emit ProjectBacked(id, msg.sender, msg.value, block.timestamp);
 
         emit Action (
             id,
@@ -211,7 +229,9 @@ contract Genesis {
         payTo(projects[id].owner, (raised - tax));
         payTo(owner, tax);
 
-        balance -= projects[id].raised;
+        // no internal bookkeeping required — use address(this).balance for canonical contract balance
+
+        emit PayoutProcessed(id, projects[id].owner, (raised - tax), tax, block.timestamp);
 
         emit Action (
             id,
@@ -221,26 +241,30 @@ contract Genesis {
         );
     }
 
-    function requestRefund(uint id) public returns (bool) {
+    function requestRefund(uint id) public nonReentrant returns (bool) {
+        // restrict who can trigger refunds to prevent abuse
         require(
-            projects[id].status != statusEnum.REVERTED &&
-            projects[id].status != statusEnum.DELETED,
-            "Project not marked as revert or delete"
+            msg.sender == projects[id].owner || msg.sender == owner,
+            "Unauthorized Entity"
         );
-        
+
+        // allow owner to mark project as reverted and perform refunds
         projects[id].status = statusEnum.REVERTED;
+        // protect from reentrancy when sending refunds
         performRefund(id);
         return true;
     }
 
-    function payOutProject(uint id) public returns (bool) {
+    function payOutProject(uint id) public nonReentrant returns (bool) {
         require(projects[id].status == statusEnum.APPROVED, "Project not APPROVED");
+        require(block.timestamp >= projects[id].payOutAt, "Payout delay not reached");
+
+        // allow owner or project owner to execute payout; protect from reentrancy
         require(
-            msg.sender == projects[id].owner ||
-            msg.sender == owner,
+            msg.sender == projects[id].owner || msg.sender == owner,
             "Unauthorized Entity"
         );
-        require(block.timestamp >= projects[id].payOutAt, "Payout delay not reached");
+
         performPayout(id);
         return true;
     }
@@ -261,6 +285,11 @@ contract Genesis {
     
     function getBackers(uint id) public view returns (backerStruct[] memory) {
         return backersOf[id];
+    }
+
+    // explicit getter for canonical contract balance
+    function getInternalBalance() public view returns (uint) {
+        return address(this).balance;
     }
 
     function payTo(address to, uint256 amount) internal {
