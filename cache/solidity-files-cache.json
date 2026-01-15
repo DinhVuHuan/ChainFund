@@ -74,8 +74,8 @@
       ]
     },
     "C:\\Users\\mtruo\\Downloads\\ChainFund-truong\\src\\contracts\\Genesis.sol": {
-      "lastModificationDate": 1768416601888,
-      "contentHash": "5adcd2dccd6542fb1e838611e70e60bc",
+      "lastModificationDate": 1768470227998,
+      "contentHash": "ffe6ec2ba6ebb27783b7fecf778ada6d",
       "sourceName": "src/contracts/Genesis.sol",
       "solcConfig": {
         "version": "0.8.11",

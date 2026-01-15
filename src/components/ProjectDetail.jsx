@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
+import { ethers } from 'ethers';
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { getProjectFromBlockchain } from "../services/blockchain";
 import Identicons from "react-identicons";
 import { FaClock, FaCheckCircle, FaHeart } from "react-icons/fa";
 import { useProjectContext } from "../context/ProjectContext";
 import { getDonationsByProject } from "../services/donationAPI";
-import { checkIfAdmin } from "../services/blockchain";
-import { updateCampaign, payoutProject } from "../services/campaignAPI";
+import { checkIfAdmin, renounceProjectOwnership, triggerAutoPayout } from "../services/blockchain";
+import { updateCampaign } from "../services/campaignAPI";
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -16,28 +17,40 @@ const ProjectDetail = () => {
 
   const project = projects.find(p => Number(p.id) === Number(id));
   const [projectInfo, setProjectInfo] = useState(null);
+  const [currentBlockTime, setCurrentBlockTime] = useState(null);
   const display = projectInfo ?? project;
   const [tab, setTab] = useState("details");
   const [history, setHistory] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editValues, setEditValues] = useState({ title: '', description: '', image: '', duration: '' });
   const [isAllowedToEdit, setIsAllowedToEdit] = useState(false);
+  const [isProjectOwner, setIsProjectOwner] = useState(false);
   const [isPayoutting, setIsPayoutting] = useState(false);
 
   useEffect(() => {
     const checkPerms = async () => {
       try {
-        if (!project) return setIsAllowedToEdit(false)
+        // Determine authoritative owner: prefer fresh on-chain value (projectInfo),
+        // otherwise fall back to context project. This ensures we compare the
+        // wallet to the actual current owner (not necessarily the creator stored elsewhere).
+        if (!project && !projectInfo) return setIsAllowedToEdit(false)
         const admin = await checkIfAdmin(currentAccount || '')
-        const ownerMatch = (currentAccount || '').toLowerCase() === (project.owner || '').toLowerCase()
-        setIsAllowedToEdit(admin || ownerMatch)
+        const authoritativeOwner = (projectInfo && projectInfo.owner) ? String(projectInfo.owner) : (project && project.owner ? String(project.owner) : '')
+        const zeroAddr = '0x0000000000000000000000000000000000000000'
+        const ownerMatch = (currentAccount || '').toLowerCase() === (String(authoritativeOwner || '')).toLowerCase()
+        const ownerRenounced = String(authoritativeOwner || '') === zeroAddr
+        // If owner has renounced, disable edits for everyone (including admin).
+        const canEdit = !ownerRenounced && (admin || ownerMatch)
+        setIsAllowedToEdit(canEdit)
+        setIsProjectOwner(ownerMatch && !ownerRenounced)
       } catch (e) {
         console.warn('Error checking edit permissions', e)
         setIsAllowedToEdit(false)
+        setIsProjectOwner(false)
       }
     }
     checkPerms()
-  }, [currentAccount, project])
+  }, [currentAccount, project, projectInfo])
 
   useEffect(() => {
     // If navigated with state.tab, set initial tab
@@ -73,6 +86,24 @@ const ProjectDetail = () => {
     load()
   }, [project, id, location])
 
+  useEffect(() => {
+    // fetch latest block timestamp for user visibility
+    const fetchBlockTime = async () => {
+      try {
+        if (typeof window === 'undefined' || !window.ethereum) return
+        const provider = new ethers.providers.Web3Provider(window.ethereum)
+        const block = await provider.getBlock('latest')
+        if (block && block.timestamp) setCurrentBlockTime(new Date(block.timestamp * 1000))
+      } catch (e) {
+        console.warn('Cannot fetch block timestamp', e)
+      }
+    }
+
+    fetchBlockTime()
+    const t = setInterval(fetchBlockTime, 15000)
+    return () => clearInterval(t)
+  }, [])
+
   if (!project)
     return (
       <p className="text-center py-10 text-red-500 text-xl">Project not found.</p>
@@ -84,16 +115,74 @@ const ProjectDetail = () => {
 
         {/* HEADER */}
         <div className="flex items-center gap-3 mb-6">
-          <Identicons string={display?.owner} size={32} />
+          <Identicons string={display?.owner || 'none'} size={32} />
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               {display?.title}
             </h2>
             <p className="text-gray-500 dark:text-gray-300 text-sm">
-              Owner: {display?.owner}
+              Owner: {(display?.owner && display.owner !== '0x0000000000000000000000000000000000000000') ? display.owner : 'None'}
+              {currentBlockTime && (
+                <span className="ml-3 text-xs text-gray-400">• Chain time: {currentBlockTime.toLocaleString()}</span>
+              )}
             </p>
         </div>
         </div>
+
+        {/* PAYOUT INFO */}
+        {display?.status === 'APPROVED' && (
+          <div className="mb-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {display?.payOutAt ? (
+                (() => {
+                  const payoutDate = new Date(display.payOutAt * 1000)
+                  const ready = currentBlockTime && (currentBlockTime.getTime() >= payoutDate.getTime())
+                  return (
+                    <>
+                      Payout scheduled at: <strong>{payoutDate.toLocaleString()}</strong>
+                      {ready ? (
+                        <span className="ml-3 text-green-600">• Ready for payout</span>
+                      ) : (
+                        <span className="ml-3 text-yellow-600">• Waiting for delay</span>
+                      )}
+                    </>
+                  )
+                })()
+              ) : (
+                <span>PayOut schedule not set yet.</span>
+              )}
+            </p>
+
+            {/* Trigger Payout button visible to anyone when ready */}
+            {display?.payOutAt && currentBlockTime && (currentBlockTime.getTime() >= (display.payOutAt * 1000)) && (
+              <div className="mt-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      setIsPayoutting(true)
+                      const res = await triggerAutoPayout(project.id)
+                      if (res && res.success) {
+                        await refreshCampaigns()
+                        alert('Đã kích hoạt payout — kiểm tra giao dịch trong ví hoặc explorer')
+                      } else {
+                        alert('Kích hoạt payout thất bại (Xem console)')
+                      }
+                    } catch (e) {
+                      console.error('Trigger payout error', e)
+                      alert('Lỗi khi kích hoạt payout (Xem console)')
+                    } finally {
+                      setIsPayoutting(false)
+                    }
+                  }}
+                  disabled={isPayoutting}
+                  className={`mt-2 px-4 py-2 rounded ${isPayoutting ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white`}
+                >
+                  {isPayoutting ? 'Triggering payout...' : 'Trigger Payout (requires wallet confirm)'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* IMAGE */}
         <img
@@ -236,7 +325,7 @@ const ProjectDetail = () => {
                       setIsEditing(false)
                     } catch (e) {
                       console.error('Error updating campaign', e)
-                      alert('Update failed. See console.')
+                      alert('Cập nhật thất bại. Xem console.')
                     }
                   }}>Save</button>
                   <button className="px-4 py-2 bg-gray-300 rounded" onClick={()=>setIsEditing(false)}>Cancel</button>
@@ -274,44 +363,62 @@ const ProjectDetail = () => {
 
       {/* DONATE BUTTON – fixed bottom */}
       <div className="fixed bottom-0 left-0 w-full px-6 py-4 bg-white/90 dark:bg-gray-900/90 backdrop-blur shadow-2xl">
-        {(['Active','OPEN','Open'].includes(display?.status)) ? (
-          <button
-            onClick={() => navigate(`/donate/${id}`)}
-            className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 
-            text-white text-lg font-semibold shadow-lg transition"
-          >
-            Donate Now
-          </button>
-        ) : project.status === 'Approved' && isAllowedToEdit ? (
-          <div>
-            <button
-              onClick={async () => {
-                try {
-                  setIsPayoutting(true)
-                  await payoutProject(project.id)
-                  await refreshCampaigns()
-                  alert('Payout transaction submitted and processed.')
-                } catch (e) {
-                  console.error('Payout failed', e)
-                  alert('Payout failed: ' + (e.message || e))
-                } finally {
-                  setIsPayoutting(false)
-                }
-              }}
-              disabled={isPayoutting}
-              className={`w-full py-3 rounded-xl ${isPayoutting ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white text-lg font-semibold shadow-lg transition`}
-            >
-              {isPayoutting ? 'Processing payout...' : 'Payout'}
-            </button>
-          </div>
-        ) : (
-          <button
-            disabled
-            className="w-full py-3 rounded-xl bg-gray-400 text-white text-lg font-semibold shadow-lg cursor-not-allowed opacity-70"
-          >
-            {display?.status === 'Expired' ? 'Campaign Expired' : 'Donations Closed'}
-          </button>
-        )}
+            {display?.owner && display?.owner !== '0x0000000000000000000000000000000000000000' && isProjectOwner ? (
+              <button
+                onClick={async () => {
+                  try {
+                    if (!currentAccount) return alert('Vui lòng kết nối ví trước khi rút quyền owner.')
+                    // double-check UI-side that caller is the project owner
+                    if ((currentAccount || '').toLowerCase() !== (project.owner || '').toLowerCase()) {
+                      return alert('Chỉ owner thực sự của project mới có thể rút quyền owner.')
+                    }
+
+                    const confirmMsg = window.confirm('Rút quyền owner sẽ làm bạn mất quyền chỉnh sửa project. Tiếp tục và ký giao dịch qua ví?')
+                    if (!confirmMsg) return
+
+                    const res = await renounceProjectOwnership(project.id)
+                      if (res && res.success) {
+                      await refreshCampaigns()
+                      alert('Đã rút quyền owner và lưu ví nhận tiền. Donate đã được kích hoạt.')
+                      // reload on-chain project info
+                      const on = await getProjectFromBlockchain(Number(id))
+                      if (on) setProjectInfo(on)
+                    }
+                  } catch (e) {
+                    console.error('Renounce failed', e)
+                    alert('Rút quyền owner thất bại (Xem console)')
+                  }
+                }}
+                className="w-full py-3 rounded-xl bg-yellow-500 hover:bg-yellow-600 text-white text-lg font-semibold shadow-lg transition"
+              >
+                Withdraw Owner Rights
+              </button>
+            ) : display?.owner === '0x0000000000000000000000000000000000000000' || !display?.owner ? (
+              // Only allow Donate Now when project is still OPEN
+              (display?.status === 'OPEN' || project?.status === 'OPEN') ? (
+                <button
+                  onClick={() => navigate(`/donate/${id}`)}
+                  className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 
+                text-white text-lg font-semibold shadow-lg transition"
+                >
+                  Donate Now
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="w-full py-3 rounded-xl bg-gray-400 text-white text-lg font-semibold shadow-lg cursor-not-allowed opacity-70"
+                >
+                  Campaign Funded
+                </button>
+              )
+            ) : (
+              <button
+                disabled
+                className="w-full py-3 rounded-xl bg-gray-400 text-white text-lg font-semibold shadow-lg cursor-not-allowed opacity-70"
+              >
+                {display?.status === 'Expired' ? 'Campaign Expired' : 'Donations Closed'}
+              </button>
+            )}
       </div>
     </div>
   );

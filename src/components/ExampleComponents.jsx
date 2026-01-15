@@ -101,7 +101,7 @@ export const DonateModalExample = ({ campaignId, onClose }) => {
       const { donateToCampaign } = await import("../services/donationAPI");
       
       await donateToCampaign(campaignId, amount, currentAccount);
-      alert("Donation successful!");
+      alert("Donate thành công!");
       onClose();
     } catch (err) {
       setError(err.message || "Donation failed");

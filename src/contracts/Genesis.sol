@@ -40,6 +40,7 @@ contract Genesis is ReentrancyGuard {
     struct projectStruct {
         uint id;
         address owner;
+        address payoutWallet;
         string title;
         string description;
         string imageURL;
@@ -89,6 +90,7 @@ contract Genesis is ReentrancyGuard {
         projectStruct memory project;
         project.id = projectCount;
         project.owner = msg.sender;
+        project.payoutWallet = address(0);
         project.title = title;
         project.description = description;
         project.imageURL = imageURL;
@@ -182,6 +184,7 @@ contract Genesis is ReentrancyGuard {
         require(msg.value > 0 ether, "Ether must be greater than zero");
         require(projectExist[id], "Project not found");
         require(projects[id].status == statusEnum.OPEN, "Project no longer opened");
+        require(projects[id].owner == address(0), "Donations disabled until owner withdraws rights");
 
         stats.totalBacking += 1;
         stats.totalDonations += msg.value;
@@ -226,8 +229,8 @@ contract Genesis is ReentrancyGuard {
         uint tax = (raised * projectTax) / 100;
 
         projects[id].status = statusEnum.PAIDOUT;
-
-        payTo(projects[id].owner, (raised - tax));
+        address recipient = projects[id].payoutWallet != address(0) ? projects[id].payoutWallet : projects[id].owner;
+        payTo(recipient, (raised - tax));
         payTo(owner, tax);
 
         // no internal bookkeeping required — use address(this).balance for canonical contract balance
@@ -240,6 +243,51 @@ contract Genesis is ReentrancyGuard {
             msg.sender,
             block.timestamp
         );
+    }
+
+    function renounceProjectOwnership(uint id) public returns (bool) {
+        require(projectExist[id], "Project not found");
+        require(msg.sender == projects[id].owner, "Unauthorized Entity");
+        require(projects[id].owner != address(0), "Already renounced");
+
+        // save current owner as payout wallet for future automatic payout
+        projects[id].payoutWallet = projects[id].owner;
+        // renounce ownership for the project
+        projects[id].owner = address(0);
+
+        emit Action(
+            id,
+            "PROJECT RENOUNCED",
+            msg.sender,
+            block.timestamp
+        );
+
+        return true;
+    }
+
+    // Anyone can call this to trigger payout/refund when conditions are met.
+    function triggerAutoPayout(uint id) public nonReentrant returns (bool) {
+        require(projectExist[id], "Project not found");
+
+        // if project already paid out or deleted/reverted, nothing to do
+        if (projects[id].status == statusEnum.PAIDOUT || projects[id].status == statusEnum.DELETED || projects[id].status == statusEnum.REVERTED) {
+            return false;
+        }
+
+        // expired without reaching target -> refund
+        if (block.timestamp >= projects[id].expiresAt && projects[id].status == statusEnum.OPEN) {
+            projects[id].status = statusEnum.REVERTED;
+            performRefund(id);
+            return true;
+        }
+
+        // approved and payout delay reached -> perform payout
+        if (projects[id].status == statusEnum.APPROVED && block.timestamp >= projects[id].payOutAt) {
+            performPayout(id);
+            return true;
+        }
+
+        return false;
     }
 
     function requestRefund(uint id) public nonReentrant returns (bool) {

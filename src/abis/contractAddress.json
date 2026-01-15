@@ -2,8 +2,8 @@
   "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "network": "unknown",
   "chainId": 31337,
-  "deployedAt": "2026-01-14T20:36:24.216Z",
+  "deployedAt": "2026-01-15T09:55:36.399Z",
   "taxFee": 5,
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "transactionHash": "0xca7d061ba0981c16d9aea8b9707863e85800180eae42fa99c9dadc1f0312a6f8"
+  "transactionHash": "0xc05100f7aef047f6c08d41e165dfee461d0d8ea6202d6c73eaf78ab3f987a316"
 }

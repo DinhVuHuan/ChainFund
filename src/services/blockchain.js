@@ -185,12 +185,27 @@ export const donateToProject = async (projectId, ethAmount) => {
       const proj = await contract.getProject(projectId)
       // proj.status is an enum value; 0 == OPEN
       const statusVal = proj.status && proj.status.toNumber ? proj.status.toNumber() : Number(proj.status)
-      if (statusVal !== 0) {
+
+      // Robustly parse owner address (handle different return shapes)
+      let ownerAddr = null
+      try {
+        ownerAddr = proj.owner && proj.owner.toString ? proj.owner.toString() : String(proj.owner)
+      } catch (e) {
+        ownerAddr = String(proj.owner)
+      }
+
+      const zeroAddr = '0x0000000000000000000000000000000000000000'
+      const isOwnerRenounced = ownerAddr && ownerAddr.toLowerCase ? ownerAddr.toLowerCase() === zeroAddr : ownerAddr === zeroAddr
+
+      // Debug: if check fails and owner looks unexpected, log the raw proj for inspection
+      if (!isOwnerRenounced || statusVal !== 0) {
+        if (!isOwnerRenounced) console.warn('donateToProject: owner not renounced:', { projectId, ownerAddr, raw: proj })
+        if (statusVal !== 0) console.warn('donateToProject: project not OPEN for backing:', { projectId, statusVal, raw: proj })
         throw new Error('Project is not open for backing')
       }
     } catch (e) {
       console.error('Pre-check failed for project:', e)
-      alert('Cannot donate: project not found or not open (check projectId)')
+      alert('Không thể donate: project không tồn tại hoặc không mở (kiểm tra projectId)')
       return { success: false, error: e }
     }
 
@@ -246,6 +261,31 @@ export const getProjectFromBlockchain = async (projectId) => {
     
     const project = await contract.getProject(projectId);
     
+    // Safe parsing helpers: avoid throwing when BigNumber.toNumber overflows
+    const safeToNumber = (bn) => {
+      try {
+        if (bn && bn.toNumber) return bn.toNumber()
+        return Number(bn)
+      } catch (e) {
+        return null
+      }
+    }
+
+    let statusIndex = safeToNumber(project.status)
+    const backersCount = safeToNumber(project.backers)
+    const payOutAt = safeToNumber(project.payOutAt)
+
+    // If status parsing failed (overflow or unexpected), fallback to computing status from raised/cost
+    if (statusIndex === null) {
+      try {
+        const costBn = project.cost && project.cost.toString ? BigInt(project.cost.toString()) : BigInt(String(project.cost || 0))
+        const raisedBn = project.raised && project.raised.toString ? BigInt(project.raised.toString()) : BigInt(String(project.raised || 0))
+        statusIndex = (raisedBn >= costBn) ? 1 : 0
+      } catch (e) {
+        statusIndex = 0
+      }
+    }
+
     return {
       id: projectId,
       owner: project.owner,
@@ -256,8 +296,10 @@ export const getProjectFromBlockchain = async (projectId) => {
       raised: ethers.utils.formatEther(project.raised),
       timestamp: new Date(project.timestamp * 1000),
       expiresAt: new Date(project.expiresAt * 1000),
-      backers: project.backers.toNumber(),
-      status: ['OPEN', 'APPROVED', 'REVERTED', 'DELETED', 'PAIDOUT'][project.status]
+      payoutWallet: project.payoutWallet || null,
+      payOutAt: payOutAt,
+      backers: backersCount,
+      status: ['OPEN', 'APPROVED', 'REVERTED', 'DELETED', 'PAIDOUT'][statusIndex]
     };
   } catch (error) {
     console.error("Lỗi lấy project từ blockchain:", error);
@@ -273,22 +315,82 @@ export const getAllProjectsFromBlockchain = async () => {
     
     const projects = await contract.getProjects();
     
-    return projects.map((p, idx) => ({
-      id: idx,
-      owner: p.owner,
-      title: p.title,
-      description: p.description,
-      imageURL: p.imageURL,
-      cost: ethers.utils.formatEther(p.cost),
-      raised: ethers.utils.formatEther(p.raised),
-      timestamp: new Date(p.timestamp * 1000),
-      expiresAt: new Date(p.expiresAt * 1000),
-      backers: p.backers.toNumber(),
-      status: ['OPEN', 'APPROVED', 'REVERTED', 'DELETED', 'PAIDOUT'][p.status]
-    }));
+    return projects.map((p, idx) => {
+      const safeToNumber = (bn) => {
+        try {
+          if (bn && bn.toNumber) return bn.toNumber()
+          return Number(bn)
+        } catch (e) {
+          return null
+        }
+      }
+
+      let statusIndex = safeToNumber(p.status)
+      const backersCount = safeToNumber(p.backers)
+      const payOutAt = safeToNumber(p.payOutAt)
+
+      if (statusIndex === null) {
+        try {
+          const costBn = p.cost && p.cost.toString ? BigInt(p.cost.toString()) : BigInt(String(p.cost || 0))
+          const raisedBn = p.raised && p.raised.toString ? BigInt(p.raised.toString()) : BigInt(String(p.raised || 0))
+          statusIndex = (raisedBn >= costBn) ? 1 : 0
+        } catch (e) {
+          statusIndex = 0
+        }
+      }
+
+      return {
+        id: idx,
+        owner: p.owner,
+        title: p.title,
+        description: p.description,
+        imageURL: p.imageURL,
+        cost: ethers.utils.formatEther(p.cost),
+        raised: ethers.utils.formatEther(p.raised),
+        timestamp: new Date(p.timestamp * 1000),
+        expiresAt: new Date(p.expiresAt * 1000),
+        payoutWallet: p.payoutWallet || null,
+        payOutAt: payOutAt,
+        backers: backersCount,
+        status: ['OPEN', 'APPROVED', 'REVERTED', 'DELETED', 'PAIDOUT'][statusIndex]
+      }
+    });
   } catch (error) {
     console.error("Lỗi lấy tất cả projects:", error);
     return [];
+  }
+}
+
+export const renounceProjectOwnership = async (projectId) => {
+  try {
+    if (!window.ethereum) return alert('Chưa kết nối ví')
+    const provider = new ethers.providers.Web3Provider(window.ethereum)
+    const signer = provider.getSigner()
+    const contract = new ethers.Contract(contractAddress, GenesisABI.abi, signer)
+
+    const tx = await contract.renounceProjectOwnership(projectId)
+    await tx.wait()
+    return { success: true, txHash: tx.hash }
+  } catch (err) {
+    console.error('renounceProjectOwnership failed', err)
+    alert('Rút quyền owner thất bại (Xem console)')
+    return { success: false, error: err }
+  }
+}
+
+export const triggerAutoPayout = async (projectId) => {
+  try {
+    if (!window.ethereum) return alert('Chưa kết nối ví')
+    const provider = new ethers.providers.Web3Provider(window.ethereum)
+    const signer = provider.getSigner()
+    const contract = new ethers.Contract(contractAddress, GenesisABI.abi, signer)
+
+    const tx = await contract.triggerAutoPayout(projectId)
+    await tx.wait()
+    return { success: true, txHash: tx.hash }
+  } catch (err) {
+    console.error('triggerAutoPayout failed', err)
+    return { success: false, error: err }
   }
 }
 

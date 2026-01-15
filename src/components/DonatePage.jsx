@@ -61,36 +61,54 @@ const DonatePage = () => {
 
   const handleDonate = async () => {
     if (!amount) return;
-    const res = await donateToProject(id, amount);
-    setAmount('');
+    try {
+      // Fetch fresh on-chain project state to avoid stale UI cache
+      const onChain = await getProjectFromBlockchain(Number(id))
+      if (!onChain) {
+        alert('Không thể lấy thông tin project từ blockchain')
+        return
+      }
 
-    // Show popup and navigate back to project history tab on success
-    if (res && res.success) {
-      alert('Donate thành công!');
-      try {
-        // refresh campaigns to update progress across app (Home/Projects/Detail)
-        if (refreshCampaigns) await refreshCampaigns()
-        // refresh local donation history and project info
-        await refreshHistory()
-        if (projects) {
-          const updated = projects.find(p => String(p.id) === String(id))
-          if (updated) setProjectInfo(updated)
-        } else {
-          const p = await getProjectFromBlockchain(Number(id))
-          if (p) setProjectInfo(p)
+      if (onChain.owner && onChain.owner !== '0x0000000000000000000000000000000000000000') {
+        alert('Owner chưa rút quyền. Donate sẽ khả dụng sau khi owner rút quyền.');
+        return;
+      }
+      if (onChain.status !== 'OPEN') {
+        alert('Campaign không còn mở để nhận donate.');
+        return;
+      }
+
+      const res = await donateToProject(id, amount);
+
+      // handle result below
+      if (res && res.success) {
+        setAmount('');
+        alert('Donate thành công!');
+        try {
+          if (refreshCampaigns) await refreshCampaigns()
+          await refreshHistory()
+          if (projects) {
+            const updated = projects.find(p => String(p.id) === String(id))
+            if (updated) setProjectInfo(updated)
+          } else {
+            const p = await getProjectFromBlockchain(Number(id))
+            if (p) setProjectInfo(p)
+          }
+        } catch (e) {
+          console.warn('refreshCampaigns failed after donation', e)
         }
-      } catch (e) {
-        console.warn('refreshCampaigns failed after donation', e)
-      }
-      navigate(`/project/${id}`, { state: { tab: 'history' } });
-    } else {
-      // If donateToProject already alerted, just no-op; otherwise show generic failure
-      if (!(res && res.success === false)) {
-        // do nothing — donateToProject handles alerts
+        navigate(`/project/${id}`, { state: { tab: 'history' } });
+        return
       } else {
-        alert('Donation failed. Check console for details.')
+        alert('Donate thất bại. Xem console để biết chi tiết.')
+        return
       }
+    } catch (e) {
+      console.error('handleDonate error', e)
+      alert(e.message || 'Donate thất bại (Xem console)')
+      return
     }
+    
   };
 
   return (
